@@ -20,9 +20,6 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
     - name: Auto Generate Buddy Project Files
       run: |
         echo "Creating complete project files automatically..."
@@ -370,7 +367,7 @@ jobs:
         }
         EOF
 
-        # 8. Resources (Layout, Strings, Themes, Colors)
+        # 8. Resources
         cat << 'EOF' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -418,25 +415,4 @@ jobs:
         cat << 'EOF' > app/src/main/res/values/themes.xml
         <resources xmlns:tools="http://schemas.android.com/tools">
             <style name="Theme.BuddyAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-                <item name="colorPrimary">@color/purple_500</item>
-            </style>
-        </resources>
-        EOF
-
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-
-    - name: Generate Gradle Wrapper
-      run: |
-        gradle wrapper
-
-    - name: Build APK with Gradle
-      run: |
-        chmod +x ./gradlew
-        ./gradlew assembleDebug --stacktrace
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Buddy-VoiceControl-APK
-        path: app/build/outputs/apk/debug/*.apk
+                <item name="colorPrimary">@color/purple_5
