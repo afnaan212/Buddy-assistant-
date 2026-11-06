@@ -416,3 +416,14 @@ jobs:
         <resources xmlns:tools="http://schemas.android.com/tools">
             <style name="Theme.BuddyAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
                 <item name="colorPrimary">@color/purple_5
+ - name: Build APK with Gradle
+      run: |
+        gradle wrapper
+        chmod +x ./gradlew
+        ./gradlew assembleDebug
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Buddy-VoiceControl-APK
+        path: app/build/outputs/apk/debug/*.apk
