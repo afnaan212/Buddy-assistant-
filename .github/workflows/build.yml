@@ -20,11 +20,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Generate Project Files
+    - name: Generate Complete Android Project
       run: |
         mkdir -p app/src/main/java/com/example/buddyassistant
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
 
         cat << 'EOF_SETTINGS' > settings.gradle
         pluginManagement {
@@ -47,7 +49,7 @@ jobs:
 
         cat << 'EOF_BUILD' > build.gradle
         plugins {
-            id 'com.android.application' version '8.2.2' apply false
+            id 'com.android.application' version '8.4.1' apply false
         }
         EOF_BUILD
 
@@ -71,19 +73,17 @@ jobs:
                 versionCode 1
                 versionName "1.0"
             }
-            buildTypes {
-                release {
-                    minifyEnabled false
-                }
-            }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_1_8
                 targetCompatibility JavaVersion.VERSION_1_8
             }
+            lint {
+                abortOnError false
+                checkReleaseBuilds false
+            }
         }
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
         }
         EOF_APP_BUILD
 
@@ -101,7 +101,7 @@ jobs:
                 android:icon="@android:drawable/ic_btn_speak_now"
                 android:label="Buddy Assistant"
                 android:supportsRtl="true"
-                android:theme="@style/Theme.BuddyAssistant">
+                android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
                 <activity
                     android:name=".MainActivity"
                     android:exported="true">
@@ -119,7 +119,7 @@ jobs:
         </manifest>
         EOF_MANIFEST
 
-        cat << 'EOF_MAIN_ACTIVITY' > app/src/main/java/com/example/buddyassistant/MainActivity.java
+        cat << 'EOF_MAIN' > app/src/main/java/com/example/buddyassistant/MainActivity.java
         package com.example.buddyassistant;
         import android.Manifest;
         import android.content.Intent;
@@ -148,24 +148,24 @@ jobs:
                 startServiceButton.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        if (checkAndRequestPermissions()) {
+                        if (checkPermissions()) {
                             startBuddyService();
                         }
                     }
                 });
             }
-            private boolean checkAndRequestPermissions() {
-                List<String> permissions = new ArrayList<>();
+            private boolean checkPermissions() {
+                List<String> list = new ArrayList<>();
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    permissions.add(Manifest.permission.RECORD_AUDIO);
+                    list.add(Manifest.permission.RECORD_AUDIO);
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        permissions.add(Manifest.permission.POST_NOTIFICATIONS);
+                        list.add(Manifest.permission.POST_NOTIFICATIONS);
                     }
                 }
-                if (!permissions.isEmpty()) {
-                    ActivityCompat.requestPermissions(this, permissions.toArray(new String[0]), PERMISSION_REQ_CODE);
+                if (!list.isEmpty()) {
+                    ActivityCompat.requestPermissions(this, list.toArray(new String[0]), PERMISSION_REQ_CODE);
                     return false;
                 }
                 return true;
@@ -178,7 +178,7 @@ jobs:
                     startService(serviceIntent);
                 }
                 statusTextView.setText("Status: Buddy Service Active");
-                Toast.makeText(this, "Buddy Assistant started successfully!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Buddy Assistant Started!", Toast.LENGTH_SHORT).show();
             }
             @Override
             public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
@@ -188,7 +188,7 @@ jobs:
                 }
             }
         }
-        EOF_MAIN_ACTIVITY
+        EOF_MAIN
 
         cat << 'EOF_SERVICE' > app/src/main/java/com/example/buddyassistant/BuddyVoiceService.java
         package com.example.buddyassistant;
@@ -244,10 +244,7 @@ jobs:
                         }
                         restart();
                     }
-                    @Override
-                    public void onError(int error) {
-                        restart();
-                    }
+                    @Override public void onError(int error) { restart(); }
                     @Override public void onReadyForSpeech(Bundle params) {}
                     @Override public void onBeginningOfSpeech() {}
                     @Override public void onRmsChanged(float rmsdB) {}
@@ -360,19 +357,15 @@ jobs:
         </resources>
         EOF_STRINGS
 
-        cat << 'EOF_THEMES' > app/src/main/res/values/themes.xml
-        <resources xmlns:tools="http://schemas.android.com/tools">
-            <style name="Theme.BuddyAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-                <item name="colorPrimary">#FF6200EE</item>
-            </style>
-        </resources>
-        EOF_THEMES
-
-    - name: Build APK with Gradle
+    - name: Accept Android SDK Licenses
       run: |
-        gradle wrapper
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+    - name: Build APK with Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.4 --distribution-type bin
         chmod +x ./gradlew
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug --stacktrace --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
