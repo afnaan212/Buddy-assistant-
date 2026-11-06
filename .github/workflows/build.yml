@@ -414,8 +414,8 @@ jobs:
 
         cat << 'EOF' > app/src/main/res/values/themes.xml
         <resources xmlns:tools="http://schemas.android.com/tools">
-            <style name="Theme.BuddyAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-                <item name="colorPrimary">@color/purple_5
+            <style name="Theme.BuddyAssistant" parent="Theme.Materi
+            <item name="colorPrimary">@color/purple_5
  - name: Build APK with Gradle
       run: |
         gradle wrapper
