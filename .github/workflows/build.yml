@@ -79,8 +79,8 @@ jobs:
                 applicationId "com.example.buddyassistant"
                 minSdk 24
                 targetSdk 34
-                versionCode 2
-                versionName "2.0"
+                versionCode 3
+                versionName "3.0"
             }
 
             compileOptions {
@@ -110,6 +110,8 @@ jobs:
             <uses-permission android:name="android.permission.WAKE_LOCK" />
             <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
             <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+            <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+            <uses-permission android:name="android.permission.VIBRATE" />
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
 
@@ -204,8 +206,8 @@ jobs:
                 } else {
                     startService(serviceIntent);
                 }
-                statusTextView.setText("Status: Buddy Service Active (Listening...)");
-                Toast.makeText(this, "Buddy Assistant Started Successfully!", Toast.LENGTH_SHORT).show();
+                statusTextView.setText("Status: Silent Buddy Listener Active");
+                Toast.makeText(this, "Buddy Assistant Started (100% Silent Mode)!", Toast.LENGTH_SHORT).show();
             }
 
             @Override
@@ -237,7 +239,10 @@ jobs:
         import android.os.Handler;
         import android.os.IBinder;
         import android.os.Looper;
+        import android.os.VibrationEffect;
+        import android.os.Vibrator;
         import android.provider.MediaStore;
+        import android.provider.Settings;
         import android.provider.Telephony;
         import android.speech.RecognitionListener;
         import android.speech.RecognizerIntent;
@@ -254,13 +259,17 @@ jobs:
             private Handler handler;
             private AudioManager audioManager;
             private TextToSpeech tts;
+            private Vibrator vibrator;
             private boolean isTorchOn = false;
+            private boolean isListening = false;
+            private int savedMusicVolume = -1;
 
             @Override
             public void onCreate() {
                 super.onCreate();
                 handler = new Handler(Looper.getMainLooper());
                 audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 createNotificationChannel();
 
                 if (Build.VERSION.SDK_INT >= 34) {
@@ -270,7 +279,8 @@ jobs:
                 }
 
                 initTTS();
-                initSpeech();
+                initSpeechConfig();
+                startSilentListeningLoop();
             }
 
             private void initTTS() {
@@ -288,6 +298,7 @@ jobs:
 
             private void speakResponse(String message) {
                 try {
+                    restoreAudioVolume();
                     if (tts != null) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                             tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, "BUDDY_TTS");
@@ -298,13 +309,30 @@ jobs:
                 } catch (Exception ignored) {}
             }
 
-            private void muteBeep() {
+            private void triggerVibration() {
+                try {
+                    if (vibrator != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            vibrator.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE));
+                        } else {
+                            vibrator.vibrate(180);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            private void silenceAllAudioStreams() {
                 try {
                     if (audioManager != null) {
+                        if (savedMusicVolume == -1) {
+                            savedMusicVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+                        }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0);
                             audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0);
                             audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0);
                         } else {
+                            audioManager.setStreamMute(AudioManager.STREAM_MUSIC, true);
                             audioManager.setStreamMute(AudioManager.STREAM_NOTIFICATION, true);
                             audioManager.setStreamMute(AudioManager.STREAM_SYSTEM, true);
                         }
@@ -312,31 +340,34 @@ jobs:
                 } catch (Exception ignored) {}
             }
 
-            private void unmuteBeep() {
+            private void restoreAudioVolume() {
                 try {
                     if (audioManager != null) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0);
                             audioManager.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0);
                             audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0);
                         } else {
+                            audioManager.setStreamMute(AudioManager.STREAM_MUSIC, false);
                             audioManager.setStreamMute(AudioManager.STREAM_NOTIFICATION, false);
                             audioManager.setStreamMute(AudioManager.STREAM_SYSTEM, false);
+                        }
+                        if (savedMusicVolume != -1) {
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, savedMusicVolume, 0);
+                            savedMusicVolume = -1;
                         }
                     }
                 } catch (Exception ignored) {}
             }
 
-            private void initSpeech() {
-                if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
-
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            private void initSpeechConfig() {
                 speechIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
                 speechIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
 
-                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10000L);
-                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L);
-                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L);
+                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L);
+                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
+                speechIntent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L);
 
                 if (Build.VERSION.SDK_INT >= 33) {
                     speechIntent.putExtra("android.speech.extra.ENABLE_MULTILANGUAGE", true);
@@ -344,33 +375,44 @@ jobs:
                 speechIntent.putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", new String[]{
                     "ur-PK", "pa-PK", "pa-IN", "en-US", "en-PK"
                 });
+            }
 
+            private void createRecognizerInstance() {
+                if (speechRecognizer != null) {
+                    try { speechRecognizer.destroy(); } catch (Exception ignored) {}
+                    speechRecognizer = null;
+                }
+
+                if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
                 speechRecognizer.setRecognitionListener(new RecognitionListener() {
                     @Override
                     public void onResults(Bundle results) {
-                        unmuteBeep();
+                        isListening = false;
                         ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                         if (matches != null && !matches.isEmpty()) {
                             for (String text : matches) {
-                                if (processVoiceCommand(text)) {
+                                if (handleVoiceInput(text)) {
                                     break;
                                 }
                             }
                         }
-                        restart(1000);
+                        scheduleNextListening(1500);
                     }
 
                     @Override
                     public void onError(int error) {
-                        unmuteBeep();
-                        long delay = 1000;
-                        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                            delay = 2000;
+                        isListening = false;
+                        if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                            createRecognizerInstance();
+                            scheduleNextListening(3000);
+                        } else {
+                            scheduleNextListening(1500);
                         }
-                        restart(delay);
                     }
 
-                    @Override public void onReadyForSpeech(Bundle params) { unmuteBeep(); }
+                    @Override public void onReadyForSpeech(Bundle params) {}
                     @Override public void onBeginningOfSpeech() {}
                     @Override public void onRmsChanged(float rmsdB) {}
                     @Override public void onBufferReceived(byte[] buffer) {}
@@ -378,36 +420,41 @@ jobs:
                     @Override public void onPartialResults(Bundle partialResults) {}
                     @Override public void onEvent(int eventType, Bundle params) {}
                 });
-
-                startListeningQuietly();
             }
 
-            private void startListeningQuietly() {
+            private synchronized void startSilentListeningLoop() {
+                if (isListening) return;
                 try {
-                    muteBeep();
+                    silenceAllAudioStreams();
+                    if (speechRecognizer == null) {
+                        createRecognizerInstance();
+                    }
                     if (speechRecognizer != null) {
                         speechRecognizer.startListening(speechIntent);
+                        isListening = true;
                     }
-                } catch (Exception ignored) {
-                    unmuteBeep();
+                } catch (Exception e) {
+                    isListening = false;
+                    scheduleNextListening(2000);
                 }
             }
 
-            private void restart(long delayMillis) {
+            private void scheduleNextListening(long delayMillis) {
                 handler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         try {
                             if (speechRecognizer != null) {
                                 speechRecognizer.cancel();
-                                startListeningQuietly();
                             }
                         } catch (Exception ignored) {}
+                        isListening = false;
+                        startSilentListeningLoop();
                     }
                 }, delayMillis);
             }
 
-            private boolean processVoiceCommand(String rawText) {
+            private boolean handleVoiceInput(String rawText) {
                 if (rawText == null || rawText.trim().isEmpty()) return false;
                 String text = rawText.toLowerCase(Locale.ROOT);
 
@@ -415,86 +462,87 @@ jobs:
                         || text.contains("budy") || text.contains("بڈی") || text.contains("بدی")
                         || text.contains("دوست") || text.contains("ਯਾਰ") || text.contains("ਬੱਡੀ");
 
-                // 1. YouTube
-                if (text.contains("youtube") || text.contains("you tube") || text.contains("u tube") || text.contains("yt")
-                        || text.contains("یوٹیوب") || text.contains("یو ٹیوب") || text.contains("ویڈیو") || text.contains("ਯੂਟਿਊਬ")) {
-                    speakResponse("Opening YouTube");
-                    openYouTube();
-                    return true;
-                }
-
-                // 2. WhatsApp
-                if (text.contains("whatsapp") || text.contains("whats app") || text.contains("watsapp")
-                        || text.contains("واٹس ایپ") || text.contains("واٹس اپ") || text.contains("واٹساپ") || text.contains("ਵਟਸਐਪ")) {
-                    speakResponse("Opening WhatsApp");
-                    launchPackage("com.whatsapp");
-                    return true;
-                }
-
-                // 3. Messages / SMS
-                if (text.contains("message") || text.contains("messages") || text.contains("sms") || text.contains("inbox")
-                        || text.contains("میسج") || text.contains("میسجز") || text.contains("پیغام") || text.contains("سنیہے")
-                        || text.contains("سنیہا") || text.contains("ایس ایم ایس") || text.contains("ਮੈਸੇਜ") || text.contains("ਸੁਨੇਹੇ")) {
-                    speakResponse("Opening Messages");
-                    openMessages();
-                    return true;
-                }
-
-                // 4. Camera
-                if (text.contains("camera") || text.contains("photo") || text.contains("picture")
-                        || text.contains("کیمرہ") || text.contains("کیمرا") || text.contains("تصویر") || text.contains("فوٹو") || text.contains("ਕੈਮਰਾ")) {
-                    speakResponse("Opening Camera");
-                    openCamera();
-                    return true;
-                }
-
-                // 5. Phone / Call
-                if (text.contains("dialer") || text.contains("phone") || text.contains("call")
-                        || text.contains("فون") || text.contains("کال") || text.contains("ڈائلر") || text.contains("ਕਾਲ")) {
-                    speakResponse("Opening Phone");
-                    openDialer();
-                    return true;
-                }
-
-                // 6. Browser / Chrome
-                if (text.contains("chrome") || text.contains("browser") || text.contains("google") || text.contains("internet")
-                        || text.contains("کروم") || text.contains("گوگل") || text.contains("براؤزر") || text.contains("انٹرنیٹ") || text.contains("ਕ੍ਰੋਮ")) {
-                    speakResponse("Opening Browser");
-                    openBrowser();
-                    return true;
-                }
-
-                // 7. Facebook
-                if (text.contains("facebook") || text.contains("face book") || text.contains("fb")
-                        || text.contains("فیس بک") || text.contains("فیسبک") || text.contains("ਫੇਸਬੁੱਕ")) {
-                    speakResponse("Opening Facebook");
-                    openFacebook();
-                    return true;
-                }
-
-                // 8. Settings
-                if (text.contains("setting") || text.contains("settings") || text.contains("سیٹنگ") || text.contains("سیٹنگز") || text.contains("ਸੈਟਿੰਗ")) {
-                    speakResponse("Opening Settings");
-                    openSettings();
-                    return true;
-                }
-
-                // 9. Gallery
-                if (text.contains("gallery") || text.contains("photos") || text.contains("گیلری") || text.contains("تصاویر") || text.contains("ਗੈਲਰੀ")) {
-                    speakResponse("Opening Gallery");
-                    openGallery();
-                    return true;
-                }
-
-                // 10. Flashlight / Torch
-                if (text.contains("torch") || text.contains("flashlight") || text.contains("light")
-                        || text.contains("ٹارچ") || text.contains("لائٹ") || text.contains("بتی")) {
-                    toggleTorch();
-                    return true;
-                }
-
-                // If only wake word was detected
                 if (hasWakeWord) {
+                    triggerVibration();
+
+                    // 1. YouTube
+                    if (text.contains("youtube") || text.contains("you tube") || text.contains("u tube") || text.contains("yt")
+                            || text.contains("یوٹیوب") || text.contains("یو ٹیوب") || text.contains("ویڈیو") || text.contains("ਯੂਟਿਊਬ")) {
+                        speakResponse("Opening YouTube");
+                        openYouTube();
+                        return true;
+                    }
+
+                    // 2. WhatsApp
+                    if (text.contains("whatsapp") || text.contains("whats app") || text.contains("watsapp")
+                            || text.contains("واٹس ایپ") || text.contains("واٹس اپ") || text.contains("واٹساپ") || text.contains("ਵਟਸਐਪ")) {
+                        speakResponse("Opening WhatsApp");
+                        launchPackage("com.whatsapp");
+                        return true;
+                    }
+
+                    // 3. Messages / SMS
+                    if (text.contains("message") || text.contains("messages") || text.contains("sms") || text.contains("inbox")
+                            || text.contains("میسج") || text.contains("میسجز") || text.contains("پیغام") || text.contains("سنیہے")
+                            || text.contains("سنیہا") || text.contains("ایس ایم ایس") || text.contains("ਮੈਸੇਜ") || text.contains("ਸੁਨੇਹੇ")) {
+                        speakResponse("Opening Messages");
+                        openMessages();
+                        return true;
+                    }
+
+                    // 4. Camera
+                    if (text.contains("camera") || text.contains("photo") || text.contains("picture")
+                            || text.contains("کیمرہ") || text.contains("کیمرا") || text.contains("تصویر") || text.contains("فوٹو") || text.contains("ਕੈਮਰਾ")) {
+                        speakResponse("Opening Camera");
+                        openCamera();
+                        return true;
+                    }
+
+                    // 5. Phone / Call
+                    if (text.contains("dialer") || text.contains("phone") || text.contains("call")
+                            || text.contains("فون") || text.contains("کال") || text.contains("ڈائلر") || text.contains("ਕਾਲ")) {
+                        speakResponse("Opening Phone");
+                        openDialer();
+                        return true;
+                    }
+
+                    // 6. Browser / Chrome
+                    if (text.contains("chrome") || text.contains("browser") || text.contains("google") || text.contains("internet")
+                            || text.contains("کروم") || text.contains("گوگل") || text.contains("براؤزر") || text.contains("انٹرنیٹ") || text.contains("ਕ੍ਰੋਮ")) {
+                        speakResponse("Opening Browser");
+                        openBrowser();
+                        return true;
+                    }
+
+                    // 7. Facebook
+                    if (text.contains("facebook") || text.contains("face book") || text.contains("fb")
+                            || text.contains("فیس بک") || text.contains("فیسبک") || text.contains("ਫੇਸਬੁੱਕ")) {
+                        speakResponse("Opening Facebook");
+                        openFacebook();
+                        return true;
+                    }
+
+                    // 8. Settings
+                    if (text.contains("setting") || text.contains("settings") || text.contains("سیٹنگ") || text.contains("سیٹنگز") || text.contains("ਸੈਟਿੰਗ")) {
+                        speakResponse("Opening Settings");
+                        openSettings();
+                        return true;
+                    }
+
+                    // 9. Gallery
+                    if (text.contains("gallery") || text.contains("photos") || text.contains("گیلری") || text.contains("تصاویر") || text.contains("ਗੈلری")) {
+                        speakResponse("Opening Gallery");
+                        openGallery();
+                        return true;
+                    }
+
+                    // 10. Flashlight / Torch
+                    if (text.contains("torch") || text.contains("flashlight") || text.contains("light")
+                            || text.contains("ٹارچ") || text.contains("لائٹ") || text.contains("بتی")) {
+                        toggleTorch();
+                        return true;
+                    }
+
                     speakResponse("Ji, main sun raha hoon");
                     return true;
                 }
@@ -503,6 +551,7 @@ jobs:
             }
 
             private void openYouTube() {
+                restoreAudioVolume();
                 Intent intent = getPackageManager().getLaunchIntentForPackage("com.google.android.youtube");
                 if (intent == null) {
                     intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com"));
@@ -514,6 +563,7 @@ jobs:
             }
 
             private void openMessages() {
+                restoreAudioVolume();
                 Intent intent = null;
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -539,6 +589,7 @@ jobs:
             }
 
             private void openCamera() {
+                restoreAudioVolume();
                 Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 try {
@@ -547,6 +598,7 @@ jobs:
             }
 
             private void openDialer() {
+                restoreAudioVolume();
                 Intent intent = new Intent(Intent.ACTION_DIAL);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 try {
@@ -555,6 +607,7 @@ jobs:
             }
 
             private void openBrowser() {
+                restoreAudioVolume();
                 Intent intent = getPackageManager().getLaunchIntentForPackage("com.android.chrome");
                 if (intent == null) {
                     intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"));
@@ -566,6 +619,7 @@ jobs:
             }
 
             private void openFacebook() {
+                restoreAudioVolume();
                 Intent intent = getPackageManager().getLaunchIntentForPackage("com.facebook.katana");
                 if (intent == null) {
                     intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.facebook.com"));
@@ -577,7 +631,8 @@ jobs:
             }
 
             private void openSettings() {
-                Intent intent = new Intent(android.provider.Settings.ACTION_SETTINGS);
+                restoreAudioVolume();
+                Intent intent = new Intent(Settings.ACTION_SETTINGS);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 try {
                     startActivity(intent);
@@ -585,6 +640,7 @@ jobs:
             }
 
             private void openGallery() {
+                restoreAudioVolume();
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setType("image/*");
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -606,8 +662,8 @@ jobs:
             }
 
             private void launchPackage(String packageName) {
-                PackageManager pm = getPackageManager();
-                Intent launchIntent = pm.getLaunchIntentForPackage(packageName);
+                restoreAudioVolume();
+                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
                 if (launchIntent != null) {
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(launchIntent);
@@ -617,7 +673,7 @@ jobs:
             private Notification createNotification() {
                 return new NotificationCompat.Builder(this, CHANNEL_ID)
                         .setContentTitle("Buddy Assistant Active")
-                        .setContentText("Listening quietly for commands...")
+                        .setContentText("Listening silently in background...")
                         .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                         .setPriority(NotificationCompat.PRIORITY_LOW)
                         .setOngoing(true)
@@ -640,6 +696,7 @@ jobs:
 
             @Override
             public void onDestroy() {
+                restoreAudioVolume();
                 if (speechRecognizer != null) {
                     speechRecognizer.destroy();
                 }
