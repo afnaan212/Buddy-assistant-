@@ -20,12 +20,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Auto Generate Buddy Project Files
+    - name: Generate Project Files
       run: |
-        echo "Creating complete project files automatically..."
-        
-        # 1. settings.gradle
-        cat << 'EOF' > settings.gradle
+        mkdir -p app/src/main/java/com/example/buddyassistant
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+
+        cat << 'EOF_SETTINGS' > settings.gradle
         pluginManagement {
             repositories {
                 google()
@@ -42,37 +43,27 @@ jobs:
         }
         rootProject.name = "BuddyAssistant"
         include ':app'
-        EOF
+        EOF_SETTINGS
 
-        # 2. build.gradle (Root)
-        cat << 'EOF' > build.gradle
+        cat << 'EOF_BUILD' > build.gradle
         plugins {
             id 'com.android.application' version '8.2.2' apply false
         }
-        EOF
+        EOF_BUILD
 
-        # 3. gradle.properties
-        cat << 'EOF' > gradle.properties
+        cat << 'EOF_PROPS' > gradle.properties
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         android.nonTransitiveRClass=true
-        EOF
+        EOF_PROPS
 
-        # Create directories
-        mkdir -p app/src/main/java/com/example/buddyassistant
-        mkdir -p app/src/main/res/layout
-        mkdir -p app/src/main/res/values
-
-        # 4. app/build.gradle
-        cat << 'EOF' > app/build.gradle
+        cat << 'EOF_APP_BUILD' > app/build.gradle
         plugins {
             id 'com.android.application'
         }
-
         android {
             namespace 'com.example.buddyassistant'
             compileSdk 34
-
             defaultConfig {
                 applicationId "com.example.buddyassistant"
                 minSdk 24
@@ -80,7 +71,6 @@ jobs:
                 versionCode 1
                 versionName "1.0"
             }
-
             buildTypes {
                 release {
                     minifyEnabled false
@@ -91,33 +81,27 @@ jobs:
                 targetCompatibility JavaVersion.VERSION_1_8
             }
         }
-
         dependencies {
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
         }
-        EOF
+        EOF_APP_BUILD
 
-        # 5. AndroidManifest.xml
-        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        cat << 'EOF_MANIFEST' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
             <uses-permission android:name="android.permission.RECORD_AUDIO" />
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
             <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
             <uses-permission android:name="android.permission.WAKE_LOCK" />
             <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
             <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-
             <application
                 android:allowBackup="true"
                 android:icon="@android:drawable/ic_btn_speak_now"
                 android:label="Buddy Assistant"
                 android:supportsRtl="true"
                 android:theme="@style/Theme.BuddyAssistant">
-
                 <activity
                     android:name=".MainActivity"
                     android:exported="true">
@@ -126,7 +110,6 @@ jobs:
                         <category android:name="android.intent.category.LAUNCHER" />
                     </intent-filter>
                 </activity>
-
                 <service
                     android:name=".BuddyVoiceService"
                     android:enabled="true"
@@ -134,12 +117,10 @@ jobs:
                     android:foregroundServiceType="microphone" />
             </application>
         </manifest>
-        EOF
+        EOF_MANIFEST
 
-        # 6. MainActivity.java
-        cat << 'EOF' > app/src/main/java/com/example/buddyassistant/MainActivity.java
+        cat << 'EOF_MAIN_ACTIVITY' > app/src/main/java/com/example/buddyassistant/MainActivity.java
         package com.example.buddyassistant;
-
         import android.Manifest;
         import android.content.Intent;
         import android.content.pm.PackageManager;
@@ -155,19 +136,15 @@ jobs:
         import androidx.core.content.ContextCompat;
         import java.util.ArrayList;
         import java.util.List;
-
         public class MainActivity extends AppCompatActivity {
             private static final int PERMISSION_REQ_CODE = 101;
             private TextView statusTextView;
-
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
                 setContentView(R.layout.activity_main);
-
                 statusTextView = findViewById(R.id.statusTextView);
                 Button startServiceButton = findViewById(R.id.startServiceButton);
-
                 startServiceButton.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
@@ -177,7 +154,6 @@ jobs:
                     }
                 });
             }
-
             private boolean checkAndRequestPermissions() {
                 List<String> permissions = new ArrayList<>();
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -194,7 +170,6 @@ jobs:
                 }
                 return true;
             }
-
             private void startBuddyService() {
                 Intent serviceIntent = new Intent(this, BuddyVoiceService.class);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -202,10 +177,9 @@ jobs:
                 } else {
                     startService(serviceIntent);
                 }
-                statusTextView.setText("Status: Buddy Service Active (Listening...)");
+                statusTextView.setText("Status: Buddy Service Active");
                 Toast.makeText(this, "Buddy Assistant started successfully!", Toast.LENGTH_SHORT).show();
             }
-
             @Override
             public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
                 super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -214,12 +188,10 @@ jobs:
                 }
             }
         }
-        EOF
+        EOF_MAIN_ACTIVITY
 
-        # 7. BuddyVoiceService.java
-        cat << 'EOF' > app/src/main/java/com/example/buddyassistant/BuddyVoiceService.java
+        cat << 'EOF_SERVICE' > app/src/main/java/com/example/buddyassistant/BuddyVoiceService.java
         package com.example.buddyassistant;
-
         import android.app.Notification;
         import android.app.NotificationChannel;
         import android.app.NotificationManager;
@@ -235,17 +207,14 @@ jobs:
         import android.speech.RecognitionListener;
         import android.speech.RecognizerIntent;
         import android.speech.SpeechRecognizer;
-        import android.widget.Toast;
         import androidx.core.app.NotificationCompat;
         import java.util.ArrayList;
         import java.util.Locale;
-
         public class BuddyVoiceService extends Service {
             private SpeechRecognizer speechRecognizer;
             private Intent speechIntent;
             private static final String CHANNEL_ID = "BuddyVoiceChannel";
             private Handler handler;
-
             @Override
             public void onCreate() {
                 super.onCreate();
@@ -254,15 +223,12 @@ jobs:
                 startForeground(1, createNotification());
                 initSpeech();
             }
-
             private void initSpeech() {
                 if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
-
                 speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
                 speechIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
                 speechIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
-
                 speechRecognizer.setRecognitionListener(new RecognitionListener() {
                     @Override
                     public void onResults(Bundle results) {
@@ -278,12 +244,10 @@ jobs:
                         }
                         restart();
                     }
-
                     @Override
                     public void onError(int error) {
                         restart();
                     }
-
                     @Override public void onReadyForSpeech(Bundle params) {}
                     @Override public void onBeginningOfSpeech() {}
                     @Override public void onRmsChanged(float rmsdB) {}
@@ -292,10 +256,8 @@ jobs:
                     @Override public void onPartialResults(Bundle partialResults) {}
                     @Override public void onEvent(int eventType, Bundle params) {}
                 });
-
                 speechRecognizer.startListening(speechIntent);
             }
-
             private void restart() {
                 handler.postDelayed(new Runnable() {
                     @Override
@@ -309,7 +271,6 @@ jobs:
                     }
                 }, 500);
             }
-
             private void handleCommand(String command) {
                 if (command.contains("whatsapp") || command.contains("واٹس ایپ")) {
                     launchPackage("com.whatsapp");
@@ -329,7 +290,6 @@ jobs:
                     startActivity(intent);
                 }
             }
-
             private void launchPackage(String packageName) {
                 PackageManager pm = getPackageManager();
                 Intent launchIntent = pm.getLaunchIntentForPackage(packageName);
@@ -338,7 +298,6 @@ jobs:
                     startActivity(launchIntent);
                 }
             }
-
             private Notification createNotification() {
                 return new NotificationCompat.Builder(this, CHANNEL_ID)
                         .setContentTitle("Buddy Assistant Active")
@@ -348,7 +307,6 @@ jobs:
                         .setOngoing(true)
                         .build();
             }
-
             private void createNotificationChannel() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     NotificationChannel channel = new NotificationChannel(
@@ -360,15 +318,13 @@ jobs:
                     if (manager != null) manager.createNotificationChannel(channel);
                 }
             }
-
             @Override public int onStartCommand(Intent intent, int flags, int startId) { return START_STICKY; }
             @Override public void onDestroy() { if (speechRecognizer != null) speechRecognizer.destroy(); super.onDestroy(); }
             @Override public IBinder onBind(Intent intent) { return null; }
         }
-        EOF
+        EOF_SERVICE
 
-        # 8. Resources
-        cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+        cat << 'EOF_LAYOUT' > app/src/main/res/layout/activity_main.xml
         <?xml version="1.0" encoding="utf-8"?>
         <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
             android:layout_width="match_parent"
@@ -396,27 +352,23 @@ jobs:
                 android:layout_height="60dp"
                 android:text="START 24/7 BUDDY ASSISTANT" />
         </LinearLayout>
-        EOF
+        EOF_LAYOUT
 
-        cat << 'EOF' > app/src/main/res/values/strings.xml
+        cat << 'EOF_STRINGS' > app/src/main/res/values/strings.xml
         <resources>
             <string name="app_name">Buddy Assistant</string>
         </resources>
-        EOF
+        EOF_STRINGS
 
-        cat << 'EOF' > app/src/main/res/values/colors.xml
-        <resources>
-            <color name="purple_500">#FF6200EE</color>
-            <color name="purple_700">#FF3700B3</color>
-            <color name="teal_200">#FF03DAC5</color>
-        </resources>
-        EOF
-
-        cat << 'EOF' > app/src/main/res/values/themes.xml
+        cat << 'EOF_THEMES' > app/src/main/res/values/themes.xml
         <resources xmlns:tools="http://schemas.android.com/tools">
-            <style name="Theme.BuddyAssistant" parent="Theme.Materi
-            <item name="colorPrimary">@color/purple_5
- - name: Build APK with Gradle
+            <style name="Theme.BuddyAssistant" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+                <item name="colorPrimary">#FF6200EE</item>
+            </style>
+        </resources>
+        EOF_THEMES
+
+    - name: Build APK with Gradle
       run: |
         gradle wrapper
         chmod +x ./gradlew
